@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+option go_package = "proto";
+
+service UsersService{
+    rpc CreateUser(RequestUser)returns(User){};
+    rpc GetAllUsers(null)returns(UsersList){};
+    rpc EliminateUser(Uuid)returns(Uuid){}
+}
+
+message RequestUser {
+    string Username = 1;
+    string Email = 2;
+}
+
+message Uuid {
+    string uuid = 1;
+}
+
+message User{
+    Uuid Uuid = 1;
+    string Username = 2;
+    string Email = 3;
+}
+
+message UsersList{
+    repeated User UserList = 1;
+}
+
+message null {}
