@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  user:
+    build: .
+    ports:
+      - 8080:8080
+    depends_on:
+      - redis 
+      - clickhouse 
+      - postgres
+      - rabbit 
+
+  redis:
+    image: redis:alpine
+    
+  clickhouse:
+    image: yandex/clickhouse-server
+
+  postgres:
+    image: postgres 
+    environment:
+      - POSTGRES_PASSWORD=postgres
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=3000"
+
+  rabbit:
+    image: rabbitmq:3-management 
+

@@ -13,8 +13,8 @@ message RequestUser {
     string Email = 2;
 }
 
-message Uuid {
-    string uuid = 1;
+message Uuid{
+    string Uuid = 1;
 }
 
 message User{

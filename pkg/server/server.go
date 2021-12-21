@@ -10,19 +10,23 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/darianfd99/geo/pkg/service"
 	"google.golang.org/grpc"
 
 	"github.com/darianfd99/users-go/pkg/proto"
+	"github.com/darianfd99/users-go/pkg/service"
 )
 
 type Server struct {
+	service.Service
+
 	port            string
 	shutdownTimeout time.Duration
 }
 
-func NewServer(ctx context.Context, port string, shutdownTimeout time.Duration, services service.Service) (context.Context, *Server) {
+func NewServer(ctx context.Context, port string, services service.Service, shutdownTimeout time.Duration) (context.Context, *Server) {
 	srv := &Server{
+		Service: services,
+
 		port:            port,
 		shutdownTimeout: shutdownTimeout,
 	}
@@ -40,16 +44,17 @@ func (s *Server) Run(ctx context.Context) {
 	srv := grpc.NewServer()
 	proto.RegisterUsersServiceServer(srv, s)
 
-	if err := srv.Serve(listen); err != nil {
-		log.Fatal(err)
-	}
+	go func() {
+		if err := srv.Serve(listen); err != nil {
+			log.Fatal(err)
+		}
+	}()
 
 	log.Println("app started")
 
 	<-ctx.Done()
 	log.Println("app shutting down")
 	srv.GracefulStop()
-	return
 }
 
 func serverContext(ctx context.Context) context.Context {

@@ -2,65 +2,94 @@ package service
 
 import (
 	"context"
-	"errors"
+	"log"
+	"sync"
 
-	user "github.com/darianfd99/users-go/pkg"
+	"github.com/darianfd99/users-go/pkg/domain"
 	"github.com/darianfd99/users-go/pkg/proto"
 	"github.com/darianfd99/users-go/pkg/repository"
 )
 
 type UserService struct {
-	repo  repository.UserRepository
-	cache repository.UserCacheRepository
+	lock     *sync.Mutex
+	repo     repository.UserRepository
+	cache    repository.UserCacheRepository
+	eventBus repository.EventRepository
 }
 
-func NewUserService(repos *repository.Repository) *UserService {
+func NewUserService(repos *repository.Repository, eventBus repository.EventRepository) *UserService {
 	return &UserService{
-		repo:  repos.UserRepository,
-		cache: repos.UserCacheRepository,
+		lock:     &sync.Mutex{},
+		repo:     repos.UserRepository,
+		cache:    repos.UserCacheRepository,
+		eventBus: eventBus,
 	}
 }
 
 func (s *UserService) CreateUser(ctx context.Context, req *proto.RequestUser) (*proto.User, error) {
-	if req.Username == "" {
-		return &proto.User{}, errors.New("username required")
-	}
 
-	if req.Email == "" {
-		return &proto.User{}, errors.New("email required")
-	}
-
-	user := user.NewUser(req.Username, req.Email)
-
-	_, err := s.repo.Save(*user)
+	user, err := domain.NewUser(req.Username, req.Email)
 	if err != nil {
 		return &proto.User{}, err
 	}
 
-	return user, nil
+	err = s.repo.Save(ctx, user)
+	if err != nil {
+		return &proto.User{}, err
+	}
+	evts := user.PullEvents()
+
+	go func() {
+		s.lock.Lock()
+		err = s.eventBus.Publish(ctx, evts)
+		if err != nil {
+			log.Fatal(err)
+		}
+		s.lock.Unlock()
+	}()
+
+	protoUuid := proto.Uuid{
+		Uuid: user.GetUuid(),
+	}
+	protoUser := &proto.User{
+		Uuid:     &protoUuid,
+		Username: user.GetUsername(),
+		Email:    user.GetEmail(),
+	}
+	return protoUser, nil
 
 }
 
 func (s *UserService) GetAllUsers(ctx context.Context, null *proto.Null) (*proto.UsersList, error) {
-	userList, err := s.repo.GetAll()
+	cacheUsersList, err := s.cache.GetAll(ctx)
 	if err != nil {
 		return &proto.UsersList{}, err
 	}
 
-	protoUserList := user.NewUsersList(userList)
+	if len(cacheUsersList) > 0 {
+		protoCacheUsersList := domain.NewUsersList(cacheUsersList)
+		return protoCacheUsersList, nil
+	}
 
-	return protoUserList, nil
+	usersList, err := s.repo.GetAll(ctx)
+	if err != nil {
+		return &proto.UsersList{}, err
+	}
+
+	err = s.cache.SetList(ctx, usersList)
+	if err != nil {
+		return &proto.UsersList{}, err
+	}
+
+	protoUsersList := domain.NewUsersList(usersList)
+	return protoUsersList, nil
 }
 
 func (s *UserService) EliminateUser(ctx context.Context, uuid *proto.Uuid) (*proto.Uuid, error) {
-	StringUuid, err := s.repo.Delete(uuid.GetUuid())
+	err := s.repo.Delete(ctx, uuid.GetUuid())
 	if err != nil {
 		return &proto.Uuid{}, err
 	}
 
-	ResponseUuid := &proto.Uuid{
-		Uuid: StringUuid,
-	}
-
-	return ResponseUuid, nil
+	return uuid, nil
 }
